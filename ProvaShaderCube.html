@@ -1,0 +1,276 @@
+<html>
+	<head>
+		<title>Prova 3</title>
+		<style>
+			body{margin:0;padding:0;}
+		</style>
+	</head>
+	<body>
+	
+		<script id="fragment" type="x-shader/x-fragment">
+
+			uniform sampler2D tex;
+			uniform float delta;
+			uniform vec3 lightPos;
+
+			varying vec2 vUv;
+			varying vec3 vNormal;
+			varying vec3 vPosition;
+			
+			vec3 light; 
+				
+			float random (vec2 st) {
+				return fract(sin(dot(st.xy,
+									 vec2(12.9898,78.233)))*
+					43758.5453123);
+			}
+			
+
+			void main() {
+				light =   vec3(0.9, 0.5, 0.2);
+				vec4 color = texture2D(tex, vUv);
+				vec2 st = vUv.xy;
+				
+				float shade_factor = 0.25 + 1.3 * max(0.0, dot(vNormal, normalize(lightPos)/1.75));
+				
+				st *= 1.0; 			
+				vec2 ipos = floor(st);  
+				vec2 fpos = fract(st);  // get the fractional coords
+				vec4 rand = vec4(random( ipos ));
+				vec4 randV= vec4(random(floor( gl_FragCoord.xy*0.25+vec2(sin(delta*2.)*5., cos(delta*2.)*5.))));
+				
+				color = randV*vec4(vec3(min(color.r, min(color.g, color.b))),1.0);
+				
+				if(color.r>0.15)
+					gl_FragColor = vec4(vec3(light),1.);
+				else
+					gl_FragColor = color*shade_factor;
+				
+			}
+			
+		</script>
+		<script id="vertex" type="x-shader/x-vertex">
+			varying vec2 vUv;
+			varying vec3 vNormal;
+			varying vec3 vPosition;
+			
+			void main() {
+				vUv = uv;
+				vNormal = normal;
+				vPosition = position.xyz;
+				gl_Position =   projectionMatrix * modelViewMatrix *vec4(position,1.0);
+			}
+		</script>
+		<script src="lib/three.min.js"></script>
+		<script src="lib/stats.min.js"></script>
+		<script src="lib/GLTFLoader.js"></script>
+		<script src="lib/OrbitControls.js"></script>
+		<script>
+			var scena, camera, renderer, stats, light, mesh, controls, x, Person;
+			Start();
+			
+			
+			
+			
+			function Start(){
+				scena 		 = new THREE.Scene();
+				camera 		 = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.01, 1000);		//crea telecamera prospettica
+				
+				renderer	 = new THREE.WebGLRenderer();																	//creo renderizzatore
+				stats 		 = new Stats();
+				x			 = 0;
+				light		 = new THREE.PointLight(0xddddff);
+				var texture = THREE.ImageUtils.loadTexture("textures/sand.jpg");
+				console.log(texture);
+				
+				var uniforms = {
+					tex : {type:'t',value:texture}, delta:{type:"f",value:0.0}, lightPos:{type:"v3",value:new THREE.Vector3()}};
+				
+				var fg = document.getElementById("fragment").innerHTML;
+				var vs = document.getElementById("vertex").innerHTML;
+				
+								
+				var material = new THREE.ShaderMaterial({ uniforms : uniforms, vertexShader:vs, fragmentShader:fg});
+				var geometry = new THREE.BoxBufferGeometry(1);
+				mesh = new THREE.Mesh(geometry, material);
+				
+				controls = new THREE.OrbitControls( camera );
+								
+				
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setClearColor(0xf0f0f0);
+				
+				loading("models/Person.gltf");
+				
+				
+				stats.domElement.style.position  = 'absolute';																
+				stats.domElement.style.top 	     = '0px';
+				
+				camera.position.set( 0, 2.15,  5);
+				camera.rotation.set(-Math.PI/8, 0, 0);
+				
+				document.body.appendChild( renderer.domElement );															
+				document.body.appendChild( stats.domElement    );
+				scena.add(mesh);
+				console.log(mesh);
+				
+				light.position.set(0,0,500);
+				light.castShadow = true;
+				scena.add(light);			
+				
+				Update();
+				
+																													
+			
+			}
+			
+			function Update(){
+				requestAnimationFrame(Update);																				//l'update automatico ogni tot secondi
+				stats.update();	
+controls.update();				
+				
+				//mesh.position.x = Math.sin(Date.now()/500)*2;
+				mesh.material.uniforms.lightPos.value = light.position;
+				mesh.material.uniforms.delta.value = (Date.now()/1000)%Math.PI;
+				renderer.render(scena, camera);
+			}
+			
+			
+			function ricorso(root, s){
+			s[root.name] = root;
+			
+			if(root.children.length>0)
+				for(var i=0; i<root.children.length; i++){
+					s=ricorso(root.children[i],s);
+				}
+			return s;
+		}
+		
+		//Create Armature
+		//REQUIRE root model
+		//RETURN Armature
+		function MappaOssatura(root){
+			var Armatura = { head: null, armL:null, armR:null, handL:null, handR:null, legL:null, legR:null};
+			
+			return ricorso(root, {});
+		}
+		
+		//Read model
+		//REQUIRE path position
+		//!!Add to scene the Object
+		function loading(path){
+			var loader = new THREE.GLTFLoader(); 
+			
+			loader.load(path,
+					function (gltf){
+						var modello = {model:null, material:Array(), armature:Array()};
+	
+						console.info(gltf);
+					
+						modello.model = gltf.scene.children[0];
+						
+						console.log(modello.model.children[4]);
+						
+						modello.material.push(modello.model.children[4].material);
+						modello.castShadow = true;
+						modello.receiveShadow = true;
+						modello.material[0].normalScale = {x:0.5, y:0.5};
+						modello.material[0].metalness = 0;
+						
+						
+						modello.armature = MappaOssatura(modello.model);
+						console.info(modello);
+						Person = Entity(modello);
+						
+						scena.add(Person.Mesh.model);
+						
+						
+						
+					}, undefined, function (error){
+						console.error(error);
+					});
+			}
+			
+			
+			//Oggetto Del Camminatore errante
+			//REQUIRE model mesh del camminatore
+			//RETURN obj{ Mesh::mesh del camminatore, positionData: posizione del camminatore, update()::funzione di aggiornamento}
+			function Entity(model){
+				var modello = model;
+				var sqrt = 16;
+				var pos =  {"0":0,"1":0,"2":0};
+				var dire = function(d){
+					var x=0,z=0,yr=0;
+					switch(d){
+						case 0:
+							z--;
+							yr=Math.PI/2;
+							break;
+						case 1:
+							x--;
+							yr=Math.PI;
+							break;
+						case 2:
+							z++;
+							yr=-Math.PI/2;
+							break;
+						case 3:
+							x++;
+							yr=0;
+							break;
+					}
+					return {"x":x, "z":z, "yR":yr};
+				};
+				
+				
+				var timeMove = setInterval(
+					function(){
+						var dir = dire(0);
+						var newPos = {"0":dir["x"],"1": 0,"2": dir["z"]};
+						
+							 modello.model.rotation.y = dir["yR"];
+							 //console.log(modello.model.rotation); 
+							var tt=0;
+							var intervalloAnimazione = setInterval(function(){
+								if(tt>10){
+									clearInterval(intervalloAnimazione);
+									model.armature.LL.rotation.z = 0;
+									model.armature.LLH.rotation.z = 0;
+									model.armature.LR.rotation.z = 0;
+									model.armature.LRH.rotation.z = Math.PI;
+									
+									return;
+								}else{								
+									pos[0] = (newPos[0]/9+ pos[0]);
+									pos[2] = (newPos[2]/9+ pos[2]);
+									model.armature.LL.rotation.z = Math.abs(Math.sin(Date.now()/500));
+									model.armature.LLH.rotation.z = -Math.abs(Math.sin(Date.now()/500));
+									model.armature.LR.rotation.z = Math.abs(Math.cos(Date.now()/500));
+									model.armature.LRH.rotation.z = Math.PI-Math.abs(Math.cos(Date.now()/500));
+									}
+								tt++;
+								
+							}, 200);
+						
+						
+									
+					},2500);
+						
+				
+				return { Mesh : modello,
+				positionData : pos,
+				update:function(){
+					if(pos[0]<Math.max(0, gX-vista) || pos[0]>Math.min(sqrt, gX+vista-0.5) || pos[2]<Math.max(0, gZ-vista) || pos[2]>Math.min(sqrt, gZ+vista-0.5))
+						cropWorld.remove(modello.model);
+					else 
+						cropWorld.add(modello.model);
+					
+					pos[1] = 1;
+					modello.model.position.set((pos[0]-gX),pos[1],pos[2]-gZ);
+				}};
+				
+			}
+			
+		</script>
+	</body>
+</html>
